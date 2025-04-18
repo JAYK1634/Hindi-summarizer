@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="hi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>हिंदी टेक्स्ट समराइज़र | Hindi Text Summarizer</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&family=Noto+Sans+Devanagari:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="theme-toggle">
+        <button id="themeToggleBtn" class="theme-btn" aria-label="Toggle dark/light mode">
+            <i class="fas fa-moon"></i>
+        </button>
+    </div>
+    
+    <div class="container">
+        <header>
+            <div class="logo-container">
+                <div class="logo">
+                    <i class="fas fa-robot"></i>
+                    <h1>हिंदी समराइज़र</h1>
+                </div>
+                <p class="tagline">AI-Powered Hindi Text Summarization</p>
+            </div>
+            <div id="db-status-indicator" class="db-status" title="डेटाबेस स्थिति">
+                <i class="fas fa-database"></i>
+                <span id="db-status-text">लोड हो रहा है...</span>
+            </div>
+        </header>
+
+        <main>
+            <form method="POST" action="/summarize" id="summarizeForm">
+                <div class="options-panel card-3d-effect">
+                    <div class="option-group">
+                        <label>सारांश लंबाई:</label>
+                        <div class="toggle-buttons length-buttons">
+                            <label class="toggle-btn btn-ripple {{ 'active' if length == 'short' or not length else '' }}">
+                                <input type="radio" name="length" value="short" {{ 'checked' if length == 'short' or not length else '' }}>
+                                <span data-tooltip="संक्षिप्त सारांश">छोटा</span>
+                            </label>
+                            <label class="toggle-btn btn-ripple {{ 'active' if length == 'long' else '' }}">
+                                <input type="radio" name="length" value="long" {{ 'checked' if length == 'long' else '' }}>
+                                <span data-tooltip="विस्तृत सारांश">लंबा</span>
+                            </label>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="input-section card-3d-effect">
+                    <h2><i class="fas fa-file-alt"></i> मूल टेक्स्ट</h2>
+                    <div class="floating-label">
+                        <textarea name="text" id="inputText" placeholder=" " required>{{ input_text if input_text else '' }}</textarea>
+                        <label for="inputText">यहाँ हिंदी टेक्स्ट दर्ज करें या पेस्ट करें...</label>
+                    </div>
+                    <div class="text-stats">
+                        <div class="char-count" id="charCount">0 अक्षर</div>
+                        <div class="word-count-progress">
+                            <div class="word-count-bar" id="wordCountBar" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="buttons">
+                        <button type="submit" class="primary-btn btn-ripple"><i class="fas fa-magic"></i> सारांश बनाएँ</button>
+                        <button type="button" onclick="resetForm()" class="secondary-btn btn-ripple"><i class="fas fa-redo"></i> रीसेट करें</button>
+                    </div>
+                </div>
+            </form>
+
+            {% if summary %}
+            <div class="output-section card-3d-effect">
+                <div class="output-header">
+                    <h2><i class="fas fa-file-contract"></i> सारांश</h2>
+                    <div class="quality-indicator">
+                        <span>गुणवत्ता:</span>
+                        <div class="stars">
+                            <span class="star"><i class="fas fa-star"></i></span>
+                            <span class="star"><i class="fas fa-star"></i></span>
+                            <span class="star"><i class="fas fa-star"></i></span>
+                            <span class="star"><i class="fas fa-star"></i></span>
+                            <span class="star"><i class="fas fa-star-half-alt"></i></span>
+                        </div>
+                    </div>
+                </div>
+                <div class="summary-box">
+                    {{ summary|safe }}
+                </div>
+                <div class="stats">
+                    <span><i class="fas fa-align-left"></i> मूल वाक्य: {{ sentences }}</span>
+                    <span><i class="fas fa-font"></i> मूल शब्द: {{ words }}</span>
+                    <span><i class="fas fa-compress-alt"></i> कंप्रेशन: {{ compression if compression else '0%' }}</span>
+                </div>
+                <div class="action-buttons">
+                    <button type="button" onclick="copyToClipboard()" class="action-btn btn-ripple">
+                        <i class="fas fa-copy"></i> <span data-tooltip="क्लिपबोर्ड पर कॉपी करें">कॉपी करें</span>
+                    </button>
+                    <button type="button" onclick="window.print()" class="action-btn btn-ripple">
+                        <i class="fas fa-print"></i> <span data-tooltip="सारांश प्रिंट करें">प्रिंट करें</span>
+                    </button>
+                    <button type="button" onclick="downloadText()" class="action-btn btn-ripple">
+                        <i class="fas fa-download"></i> <span data-tooltip="टेक्स्ट फाइल डाउनलोड करें">डाउनलोड करें</span>
+                    </button>
+                    <button type="button" id="saveStatusBtn" class="action-btn save-status">
+                        <i class="fas fa-database"></i> <span id="saveStatusText" data-tooltip="डेटाबेस में सहेजने की स्थिति">सहेजा गया</span>
+                    </button>
+                </div>
+            </div>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-state-icon">
+                    <i class="fas fa-file-alt"></i>
+                </div>
+                <p>अपना हिंदी टेक्स्ट दर्ज करें और AI की मदद से सारांश प्राप्त करें</p>
+                <div class="empty-state-decoration"></div>
+            </div>
+            {% endif %}
+        </main>
+
+        <footer>
+            <p>© 2025 हिंदी समराइज़र | Powered by Google Gemini AI</p>
+            <div class="db-status-footer">
+                <a href="#" id="checkDbStatus">डेटाबेस स्थिति जांचें</a>
+            </div>
+        </footer>
+    </div>
+
+    <!-- Notification toast -->
+    <div id="notification" class="notification">
+        <div class="notification-content">
+            <i id="notificationIcon" class="fas fa-info-circle"></i>
+            <span id="notificationMessage">Notification message</span>
+        </div>
+        <button class="notification-close" onclick="hideNotification()">×</button>
+    </div>
+
+    <script>
+        // Theme toggle functionality
+        const themeToggleBtn = document.getElementById('themeToggleBtn');
+        const body = document.body;
+        const icon = themeToggleBtn.querySelector('i');
+        
+        // Check for saved theme preference or respect OS preference
+        const savedTheme = localStorage.getItem('theme');
+        if (savedTheme === 'dark') {
+            body.classList.add('dark-theme');
+            icon.classList.replace('fa-moon', 'fa-sun');
+        } else if (savedTheme === 'light') {
+            body.classList.add('light-theme');
+        } else if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+            body.classList.add('dark-theme');
+            icon.classList.replace('fa-moon', 'fa-sun');
+        }
+        
+        // Theme toggle button click handler
+        themeToggleBtn.addEventListener('click', function() {
+            if (body.classList.contains('dark-theme')) {
+                body.classList.replace('dark-theme', 'light-theme');
+                icon.classList.replace('fa-sun', 'fa-moon');
+                localStorage.setItem('theme', 'light');
+            } else {
+                body.classList.replace('light-theme', 'dark-theme');
+                icon.classList.replace('fa-moon', 'fa-sun');
+                localStorage.setItem('theme', 'dark');
+            }
+            
+            // If no theme class is present yet
+            if (!body.classList.contains('light-theme') && !body.classList.contains('dark-theme')) {
+                body.classList.add('dark-theme');
+                icon.classList.replace('fa-moon', 'fa-sun');
+                localStorage.setItem('theme', 'dark');
+            }
+        });
+
+        // Make radio buttons work with the form
+        document.querySelectorAll('.toggle-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                const input = this.querySelector('input');
+                if (input) {
+                    input.checked = true;
+                    
+                    // Add active class to selected button and remove from siblings
+                    const buttons = this.closest('.toggle-buttons').querySelectorAll('.toggle-btn');
+                    buttons.forEach(btn => {
+                        btn.classList.remove('active');
+                    });
+                    this.classList.add('active');
+                    
+                    // Auto-submit if there's already text in the textarea
+                    const textarea = document.querySelector('textarea[name="text"]');
+                    if (textarea.value.trim() !== '' && document.querySelector('.summary-box')) {
+                        document.getElementById('summarizeForm').submit();
+                    }
+                }
+            });
+        });
+
+        // Character counter and word count bar
+        const textarea = document.getElementById('inputText');
+        const charCount = document.getElementById('charCount');
+        const wordCountBar = document.getElementById('wordCountBar');
+        
+        textarea.addEventListener('input', function() {
+            const text = this.value;
+            const charLength = text.length;
+            
+            // Update character count
+            charCount.textContent = charLength + ' अक्षर';
+            
+            // Change color based on length
+            if (charLength > 3000) {
+                charCount.className = 'char-count limit-reached';
+            } else if (charLength > 2500) {
+                charCount.className = 'char-count limit-near';
+            } else {
+                charCount.className = 'char-count';
+            }
+            
+            // Update progress bar (assuming max length around 4000)
+            const percentage = Math.min(charLength / 4000 * 100, 100);
+            wordCountBar.style.width = percentage + '%';
+            
+            // Add pulse animation when approaching limit
+            if (percentage > 80) {
+                wordCountBar.classList.add('pulse-warning');
+            } else {
+                wordCountBar.classList.remove('pulse-warning');
+            }
+        });
+        
+        // Trigger input event to initialize character count on page load
+        if (textarea.value) {
+            const event = new Event('input');
+            textarea.dispatchEvent(event);
+        }
+
+        function resetForm() {
+            document.querySelector('textarea[name="text"]').value = '';
+            
+            // Reset options to defaults
+            document.querySelector('input[name="length"][value="short"]').checked = true;
+            
+            // Update active classes
+            document.querySelectorAll('.toggle-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            document.querySelector('input[name="length"][value="short"]').closest('.toggle-btn').classList.add('active');
+            
+            // Reset character count and progress bar
+            charCount.textContent = '0 अक्षर';
+            charCount.className = 'char-count';
+            wordCountBar.style.width = '0%';
+            wordCountBar.classList.remove('pulse-warning');
+            
+            // Hide summary section if it exists
+            const outputSection = document.querySelector('.output-section');
+            if (outputSection) {
+                outputSection.style.display = 'none';
+            }
+            
+            // Show empty state
+            if (!document.querySelector('.empty-state')) {
+                const main = document.querySelector('main');
+                const emptyState = document.createElement('div');
+                emptyState.className = 'empty-state';
+                emptyState.innerHTML = '<div class="empty-state-icon"><i class="fas fa-file-alt"></i></div><p>अपना हिंदी टेक्स्ट दर्ज करें और AI की मदद से सारांश प्राप्त करें</p><div class="empty-state-decoration"></div>';
+                main.appendChild(emptyState);
+            } else {
+                document.querySelector('.empty-state').style.display = 'flex';
+            }
+            
+            // Show success notification
+            showNotification('success', 'फॉर्म रीसेट कर दिया गया है');
+        }
+
+        function copyToClipboard() {
+            const summaryText = document.querySelector('.summary-box').innerText;
+            navigator.clipboard.writeText(summaryText).then(() => {
+                const copyBtn = document.querySelector('.action-btn:nth-child(1)');
+                copyBtn.classList.add('copy-success');
+                copyBtn.innerHTML = '<i class="fas fa-check"></i> <span>कॉपी हो गया</span>';
+                
+                // Show notification
+                showNotification('success', 'सारांश क्लिपबोर्ड पर कॉपी कर दिया गया है');
+                
+                setTimeout(() => {
+                    copyBtn.classList.remove('copy-success');
+                    copyBtn.innerHTML = '<i class="fas fa-copy"></i> <span data-tooltip="क्लिपबोर्ड पर कॉपी करें">कॉपी करें</span>';
+                }, 2000);
+            });
+        }
+
+        function downloadText() {
+            const summaryText = document.querySelector('.summary-box').innerText;
+            const blob = new Blob([summaryText], { type: 'text/plain' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'हिंदी-सारांश.txt';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            // Show download feedback
+            const downloadBtn = document.querySelector('.action-btn:nth-child(3)');
+            downloadBtn.classList.add('download-success');
+            downloadBtn.innerHTML = '<i class="fas fa-check"></i> <span>डाउनलोड हो गया</span>';
+            
+            // Show notification
+            showNotification('success', 'सारांश फाइल डाउनलोड हो गई है');
+            
+            setTimeout(() => {
+                downloadBtn.classList.remove('download-success');
+                downloadBtn.innerHTML = '<i class="fas fa-download"></i> <span data-tooltip="टेक्स्ट फाइल डाउनलोड करें">डाउनलोड करें</span>';
+            }, 2000);
+        }
+
+        // Add loading state during form submission
+        document.getElementById('summarizeForm').addEventListener('submit', function() {
+            const submitBtn = document.querySelector('.primary-btn');
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<div class="btn-loader"><i class="fas fa-spinner fa-spin"></i></div> प्रोसेसिंग...';
+            submitBtn.classList.add('processing');
+            
+            // Hide any existing output section or empty state
+            const outputSection = document.querySelector('.output-section');
+            if (outputSection) outputSection.style.display = 'none';
+            
+            const emptyState = document.querySelector('.empty-state');
+            if (emptyState) emptyState.style.display = 'none';
+            
+            // Add loading indicator
+            if (!document.querySelector('.loading')) {
+                const main = document.querySelector('main');
+                const loading = document.createElement('div');
+                loading.className = 'loading';
+                loading.innerHTML = `
+                    <div class="loading-content">
+                        <div class="loading-spinner"></div>
+                        <p>सारांश बनाया जा रहा है...</p>
+                    </div>
+                `;
+                main.appendChild(loading);
+            }
+        });
+
+        // Check database status on page load
+        window.addEventListener('DOMContentLoaded', function() {
+            checkDatabaseStatus();
+            
+            // Add focus animation to textarea
+            const textarea = document.getElementById('inputText');
+            setTimeout(() => {
+                textarea.classList.add('focus-attention');
+                setTimeout(() => {
+                    textarea.classList.remove('focus-attention');
+                }, 1500);
+            }, 1000);
+        });
+
+        // Function to check database status
+        function checkDatabaseStatus() {
+            const statusIndicator = document.getElementById('db-status-indicator');
+            const statusText = document.getElementById('db-status-text');
+            
+            fetch('/db-status')
+                .then(response => response.text())
+                .then(data => {
+                    if (data.includes('connected') && data.includes('working')) {
+                        statusIndicator.classList.add('connected');
+                        statusIndicator.classList.remove('error');
+                        statusText.textContent = 'डेटाबेस कनेक्टेड';
+                        
+                        // Update save status button if it exists
+                        const saveStatusBtn = document.getElementById('saveStatusBtn');
+                        if (saveStatusBtn) {
+                            saveStatusBtn.classList.add('success');
+                            document.getElementById('saveStatusText').textContent = 'सहेजा गया';
+                        }
+                    } else {
+                        statusIndicator.classList.add('error');
+                        statusIndicator.classList.remove('connected');
+                        statusText.textContent = 'डेटाबेस त्रुटि';
+                        
+                        // Update save status button if it exists
+                        const saveStatusBtn = document.getElementById('saveStatusBtn');
+                        if (saveStatusBtn) {
+                            saveStatusBtn.classList.add('error');
+                            document.getElementById('saveStatusText').textContent = 'सहेजा नहीं गया';
+                        }
+                        
+                        // Show notification
+                        showNotification('error', 'डेटाबेस कनेक्शन में समस्या है। आपका सारांश सहेजा नहीं जाएगा।');
+                    }
+                })
+                .catch(error => {
+                    statusIndicator.classList.add('error');
+                    statusIndicator.classList.remove('connected');
+                    statusText.textContent = 'डेटाबेस त्रुटि';
+                    console.error('Database status check failed:', error);
+                });
+        }
+
+        // Function to show notification
+        function showNotification(type, message) {
+            const notification = document.getElementById('notification');
+            const notificationIcon = document.getElementById('notificationIcon');
+            const notificationMessage = document.getElementById('notificationMessage');
+            
+            // Set icon and class based on type
+            notification.className = 'notification';
+            notification.classList.add(type);
+            
+            if (type === 'error') {
+                notificationIcon.className = 'fas fa-exclamation-circle';
+            } else if (type === 'success') {
+                notificationIcon.className = 'fas fa-check-circle';
+            } else {
+                notificationIcon.className = 'fas fa-info-circle';
+            }
+            
+            // Set message
+            notificationMessage.textContent = message;
+            
+            // Show notification with entrance animation
+            notification.classList.add('show');
+            
+            // Hide after 5 seconds
+            setTimeout(hideNotification, 5000);
+        }
+
+        // Function to hide notification
+        function hideNotification() {
+            const notification = document.getElementById('notification');
+            if (notification.classList.contains('show')) {
+                notification.classList.add('hide');
+                
+                // Remove classes after animation completes
+                setTimeout(() => {
+                    notification.classList.remove('show', 'hide');
+                }, 300);
+            }
+        }
+
+        // Add event listener to check database status button
+        document.getElementById('checkDbStatus').addEventListener('click', function(e) {
+            e.preventDefault();
+            checkDatabaseStatus();
+            showNotification('info', 'डेटाबेस स्थिति की जांच की जा रही है...');
+        });
+    </script>
+</body>
+</html>
