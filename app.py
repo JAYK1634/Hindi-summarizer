@@ -207,8 +207,8 @@ def view_summaries():
         cur = conn.cursor()
         
         # Query all summaries, ordered by newest first
-        cur.execute("SELECT original_text, summary_text, timestamp FROM summaries ORDER BY timestamp DESC")
-        rows = cur.execute("SELECT original_text, summary_text, timestamp FROM summaries ORDER BY timestamp DESC").fetchall()
+        cur.execute("SELECT original_text, summary_text, created_at FROM summaries ORDER BY created_at DESC")
+        rows = cur.fetchall()
         
         # Format the data for the template
         summaries = []
@@ -228,6 +228,30 @@ def view_summaries():
     except Exception as e:
         return f"Error: {str(e)}"
 
+@app.route('/db-schema')
+def db_schema():
+    try:
+        # Connect to the database
+        conn = psycopg2.connect(DATABASE_URL)
+        cur = conn.cursor()
+        
+        # Get table schema information
+        cur.execute("""
+            SELECT column_name, data_type 
+            FROM information_schema.columns 
+            WHERE table_name = 'summaries'
+        """)
+        
+        columns = cur.fetchall()
+        
+        # Close the database connection
+        cur.close()
+        conn.close()
+        
+        # Return the schema information
+        return jsonify({"table": "summaries", "columns": columns})
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
