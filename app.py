@@ -3,7 +3,6 @@ import google.generativeai as genai
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-import ssl
 import certifi
 
 # Load environment variables
@@ -20,18 +19,18 @@ model = genai.GenerativeModel("gemini-2.0-flash")
 mongodb_available = False
 try:
     from pymongo.mongo_client import MongoClient
+    from pymongo.server_api import ServerApi
     
     # Use the correct MongoDB connection string with your cluster ID
     MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://admin:dxs34Fu6WpQbgJsW@cluster0.l9fiajl.mongodb.net/hindi_summarizer?retryWrites=true&w=majority&appName=Cluster0")
     
-    # Create a new client with explicit SSL configuration
+    # Create a new client with proper SSL configuration
     client = MongoClient(
         MONGO_URI,
         tlsCAFile=certifi.where(),
-        ssl=True,
-        ssl_cert_reqs=ssl.CERT_REQUIRED,
         connectTimeoutMS=30000,
-        serverSelectionTimeoutMS=30000
+        serverSelectionTimeoutMS=30000,
+        server_api=ServerApi('1')
     )
     
     # Test the connection with a ping
