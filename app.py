@@ -19,7 +19,8 @@ mongodb_available = False
 try:
     from pymongo import MongoClient
     # Use the provided MongoDB connection string with credentials
-    MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://admin:dxs34Fu6WpQbgJsW@clusterO.mongodb.net/hindi_summarizer?retryWrites=true&w=majority")
+    # Note the lowercase 'o' in clustero - MongoDB URLs are case-sensitive
+    MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://admin:dxs34Fu6WpQbgJsW@clustero.mongodb.net/hindi_summarizer?retryWrites=true&w=majority")
     
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)  # 5 second timeout
     # Test the connection
