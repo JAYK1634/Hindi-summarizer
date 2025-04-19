@@ -1,1 +1,3 @@
 python-3.10
+TGccJcwoapqypNhO
+mongodb+srv://<your-username>:<your-password>@cluster0.xxxxx.mongodb.net/hindi_summarizer?retryWrites=true&w=majority

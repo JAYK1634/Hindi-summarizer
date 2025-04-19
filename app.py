@@ -15,18 +15,21 @@ genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
 
 # MongoDB Connection (Optional)
+mongodb_available = False
 try:
     from pymongo import MongoClient
-    MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017/")
+    # Use the provided MongoDB connection string with credentials
+    MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://admin:dxs34Fu6WpQbgJsW@cluster0.mongodb.net/hindi_summarizer?retryWrites=true&w=majority")
+    
     client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)  # 5 second timeout
     # Test the connection
     client.server_info()
     db = client["hindi_summarizer"]
     summaries_collection = db["summaries"]
     mongodb_available = True
-    print("MongoDB connection successful!")
+    print("✅ MongoDB connection successful!")
 except Exception as e:
-    print(f"MongoDB connection failed: {e}")
+    print(f"❌ MongoDB connection failed: {e}")
     mongodb_available = False
 
 @app.route('/')
@@ -40,8 +43,8 @@ def db_status():
             # Test the connection is still working
             client.server_info()
             return "Database connected and working properly"
-        except:
-            return "Database connection error"
+        except Exception as e:
+            return f"Database connection error: {str(e)}"
     else:
         return "Database not configured"
 
@@ -100,8 +103,9 @@ def summarize():
                 
                 # Insert the summary into MongoDB
                 summaries_collection.insert_one(summary_data)
+                print("✅ Summary saved to MongoDB")
             except Exception as e:
-                print(f"MongoDB save error: {e}")
+                print(f"❌ MongoDB save error: {e}")
                 # Continue with the application even if MongoDB save fails
         
     except Exception as e:
@@ -119,4 +123,7 @@ def summarize():
                           compression=compression)
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    # Get port from environment variable (Render sets this)
+    port = int(os.environ.get("PORT", 5000))
+    # Use 0.0.0.0 to bind to all addresses
+    app.run(host="0.0.0.0", port=port)
