@@ -3,8 +3,8 @@ import google.generativeai as genai
 from datetime import datetime
 import os
 from dotenv import load_dotenv
-from pymongo.mongo_client import MongoClient
-from pymongo.server_api import ServerApi
+import ssl
+import certifi
 
 # Load environment variables
 load_dotenv()
@@ -19,11 +19,20 @@ model = genai.GenerativeModel("gemini-2.0-flash")
 # MongoDB Connection (Optional)
 mongodb_available = False
 try:
+    from pymongo.mongo_client import MongoClient
+    
     # Use the correct MongoDB connection string with your cluster ID
     MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://admin:dxs34Fu6WpQbgJsW@cluster0.l9fiajl.mongodb.net/hindi_summarizer?retryWrites=true&w=majority&appName=Cluster0")
     
-    # Create a new client and connect to the server with API version
-    client = MongoClient(MONGO_URI, server_api=ServerApi('1'))
+    # Create a new client with explicit SSL configuration
+    client = MongoClient(
+        MONGO_URI,
+        tlsCAFile=certifi.where(),
+        ssl=True,
+        ssl_cert_reqs=ssl.CERT_REQUIRED,
+        connectTimeoutMS=30000,
+        serverSelectionTimeoutMS=30000
+    )
     
     # Test the connection with a ping
     client.admin.command('ping')
@@ -35,7 +44,32 @@ try:
     
 except Exception as e:
     print(f"❌ MongoDB connection failed: {e}")
+    print("Application will continue without database functionality")
     mongodb_available = False
+
+# Local storage fallback function
+def save_summary_locally(summary_data):
+    try:
+        import json
+        from pathlib import Path
+        
+        # Create data directory if it doesn't exist
+        data_dir = Path("./data")
+        data_dir.mkdir(exist_ok=True)
+        
+        # Generate a timestamp-based filename
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        file_path = data_dir / f"summary_{timestamp}.json"
+        
+        # Save the summary data as JSON
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(summary_data, f, ensure_ascii=False, default=str)
+            
+        print(f"✅ Summary saved locally to {file_path}")
+        return True
+    except Exception as e:
+        print(f"❌ Local save error: {e}")
+        return False
 
 @app.route('/')
 def index():
@@ -51,7 +85,7 @@ def db_status():
         except Exception as e:
             return f"Database connection error: {str(e)}"
     else:
-        return "Database not configured"
+        return "Database not configured - using local storage fallback"
 
 @app.route('/summarize', methods=["POST"])
 def summarize():
@@ -92,26 +126,31 @@ def summarize():
         sentences = len([s for s in input_text.split('।') if s.strip()])
         words = len(input_text.split())
         
-        # Save to MongoDB if available
+        # Create summary data dictionary
+        summary_data = {
+            "original_text": input_text,
+            "summary_text": summary,
+            "length": length,
+            "original_sentences": sentences,
+            "original_words": words,
+            "summary_words": summary_words,
+            "compression_percentage": compression_value,
+            "created_at": datetime.now()
+        }
+        
+        # Try to save to MongoDB first
         if mongodb_available:
             try:
-                summary_data = {
-                    "original_text": input_text,
-                    "summary_text": summary,
-                    "length": length,
-                    "original_sentences": sentences,
-                    "original_words": words,
-                    "summary_words": summary_words,
-                    "compression_percentage": compression_value,
-                    "created_at": datetime.now()
-                }
-                
                 # Insert the summary into MongoDB
                 summaries_collection.insert_one(summary_data)
                 print("✅ Summary saved to MongoDB")
             except Exception as e:
                 print(f"❌ MongoDB save error: {e}")
-                # Continue with the application even if MongoDB save fails
+                # Fall back to local storage
+                save_summary_locally(summary_data)
+        else:
+            # MongoDB not available, use local storage
+            save_summary_locally(summary_data)
         
     except Exception as e:
         summary = f"❌ त्रुटि: {str(e)}"
