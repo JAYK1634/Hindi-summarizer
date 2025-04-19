@@ -2,8 +2,8 @@ from flask import Flask, render_template, request, jsonify
 import google.generativeai as genai
 from datetime import datetime
 import os
+import sqlite3
 from dotenv import load_dotenv
-import certifi
 
 # Load environment variables
 load_dotenv()
@@ -15,59 +15,60 @@ API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDRQWMO2wHO3YW_LgCtAoukdWW6PLZCJvc")
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
 
-# MongoDB Connection (Optional)
-mongodb_available = False
-try:
-    from pymongo.mongo_client import MongoClient
-    from pymongo.server_api import ServerApi
-    
-    # Use the correct MongoDB connection string with your cluster ID
-    MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://admin:dxs34Fu6WpQbgJsW@cluster0.l9fiajl.mongodb.net/hindi_summarizer?retryWrites=true&w=majority&appName=Cluster0")
-    
-    # Create a new client with proper SSL configuration
-    client = MongoClient(
-        MONGO_URI,
-        tlsCAFile=certifi.where(),
-        connectTimeoutMS=30000,
-        serverSelectionTimeoutMS=30000,
-        server_api=ServerApi('1')
-    )
-    
-    # Test the connection with a ping
-    client.admin.command('ping')
-    print("✅ Pinged your deployment. You successfully connected to MongoDB!")
-    
-    db = client["hindi_summarizer"]
-    summaries_collection = db["summaries"]
-    mongodb_available = True
-    
-except Exception as e:
-    print(f"❌ MongoDB connection failed: {e}")
-    print("Application will continue without database functionality")
-    mongodb_available = False
+# Set up SQLite database
+DB_PATH = os.path.join(os.path.dirname(__file__), 'summaries.db')
 
-# Local storage fallback function
-def save_summary_locally(summary_data):
+def init_db():
     try:
-        import json
-        from pathlib import Path
-        
-        # Create data directory if it doesn't exist
-        data_dir = Path("./data")
-        data_dir.mkdir(exist_ok=True)
-        
-        # Generate a timestamp-based filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_path = data_dir / f"summary_{timestamp}.json"
-        
-        # Save the summary data as JSON
-        with open(file_path, "w", encoding="utf-8") as f:
-            json.dump(summary_data, f, ensure_ascii=False, default=str)
-            
-        print(f"✅ Summary saved locally to {file_path}")
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS summaries (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            original_text TEXT NOT NULL,
+            summary_text TEXT NOT NULL,
+            length TEXT NOT NULL,
+            original_sentences INTEGER,
+            original_words INTEGER,
+            summary_words INTEGER,
+            compression_percentage REAL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        conn.commit()
+        conn.close()
+        print("✅ SQLite database initialized successfully")
         return True
     except Exception as e:
-        print(f"❌ Local save error: {e}")
+        print(f"❌ Database initialization failed: {e}")
+        return False
+
+# Initialize the database
+db_available = init_db()
+
+def save_to_db(summary_data):
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute('''
+        INSERT INTO summaries 
+        (original_text, summary_text, length, original_sentences, original_words, summary_words, compression_percentage)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ''', (
+            summary_data["original_text"],
+            summary_data["summary_text"],
+            summary_data["length"],
+            summary_data["original_sentences"],
+            summary_data["original_words"],
+            summary_data["summary_words"],
+            summary_data["compression_percentage"]
+        ))
+        conn.commit()
+        conn.close()
+        print("✅ Summary saved to SQLite database")
+        return True
+    except Exception as e:
+        print(f"❌ Database save error: {e}")
         return False
 
 @app.route('/')
@@ -76,15 +77,18 @@ def index():
 
 @app.route('/db-status')
 def db_status():
-    if mongodb_available:
+    if db_available:
         try:
-            # Test the connection is still working
-            client.admin.command('ping')
-            return "Database connected and working properly"
+            conn = sqlite3.connect(DB_PATH)
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) FROM summaries")
+            count = cursor.fetchone()[0]
+            conn.close()
+            return f"Database connected and working properly. Total summaries: {count}"
         except Exception as e:
-            return f"Database connection error: {str(e)}"
+            return f"Database error: {str(e)}"
     else:
-        return "Database not configured - using local storage fallback"
+        return "Database not configured correctly"
 
 @app.route('/summarize', methods=["POST"])
 def summarize():
@@ -133,23 +137,12 @@ def summarize():
             "original_sentences": sentences,
             "original_words": words,
             "summary_words": summary_words,
-            "compression_percentage": compression_value,
-            "created_at": datetime.now()
+            "compression_percentage": compression_value
         }
         
-        # Try to save to MongoDB first
-        if mongodb_available:
-            try:
-                # Insert the summary into MongoDB
-                summaries_collection.insert_one(summary_data)
-                print("✅ Summary saved to MongoDB")
-            except Exception as e:
-                print(f"❌ MongoDB save error: {e}")
-                # Fall back to local storage
-                save_summary_locally(summary_data)
-        else:
-            # MongoDB not available, use local storage
-            save_summary_locally(summary_data)
+        # Save to SQLite database
+        if db_available:
+            save_to_db(summary_data)
         
     except Exception as e:
         summary = f"❌ त्रुटि: {str(e)}"
@@ -164,6 +157,44 @@ def summarize():
                           sentences=sentences,
                           words=words,
                           compression=compression)
+
+@app.route('/history', methods=["GET"])
+def history():
+    if not db_available:
+        return jsonify({"error": "Database not available"}), 500
+    
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row  # This enables column access by name
+        cursor = conn.cursor()
+        
+        # Get the most recent 10 summaries
+        cursor.execute('''
+        SELECT id, summary_text, length, original_words, summary_words, 
+               compression_percentage, created_at
+        FROM summaries
+        ORDER BY created_at DESC
+        LIMIT 10
+        ''')
+        
+        rows = cursor.fetchall()
+        summaries = []
+        for row in rows:
+            summaries.append({
+                "id": row["id"],
+                "summary": row["summary_text"],
+                "length": row["length"],
+                "original_words": row["original_words"],
+                "summary_words": row["summary_words"],
+                "compression": f"{row['compression_percentage']:.1f}%",
+                "created_at": row["created_at"]
+            })
+        
+        conn.close()
+        return jsonify({"summaries": summaries})
+    
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
     # Get port from environment variable (Render sets this)
