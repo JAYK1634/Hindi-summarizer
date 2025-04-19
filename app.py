@@ -2,7 +2,8 @@ from flask import Flask, render_template, request, jsonify
 import google.generativeai as genai
 from datetime import datetime
 import os
-import sqlite3
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -15,19 +16,26 @@ API_KEY = os.getenv("GEMINI_API_KEY", "AIzaSyDRQWMO2wHO3YW_LgCtAoukdWW6PLZCJvc")
 genai.configure(api_key=API_KEY)
 model = genai.GenerativeModel("gemini-2.0-flash")
 
-# Set up SQLite database
-DB_PATH = os.path.join(os.path.dirname(__file__), 'summaries.db')
+# Database connection
+DATABASE_URL = os.getenv("DATABASE_URL")
+db_available = False
 
 def init_db():
+    if not DATABASE_URL:
+        print("❌ No DATABASE_URL environment variable found")
+        return False
+    
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
+        
+        # Create table if it doesn't exist
         cursor.execute('''
         CREATE TABLE IF NOT EXISTS summaries (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
             original_text TEXT NOT NULL,
             summary_text TEXT NOT NULL,
-            length TEXT NOT NULL,
+            length VARCHAR(10) NOT NULL,
             original_sentences INTEGER,
             original_words INTEGER,
             summary_words INTEGER,
@@ -35,9 +43,11 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
         ''')
+        
         conn.commit()
+        cursor.close()
         conn.close()
-        print("✅ SQLite database initialized successfully")
+        print("✅ PostgreSQL database initialized successfully")
         return True
     except Exception as e:
         print(f"❌ Database initialization failed: {e}")
@@ -48,12 +58,13 @@ db_available = init_db()
 
 def save_to_db(summary_data):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn = psycopg2.connect(DATABASE_URL)
         cursor = conn.cursor()
+        
         cursor.execute('''
         INSERT INTO summaries 
         (original_text, summary_text, length, original_sentences, original_words, summary_words, compression_percentage)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         ''', (
             summary_data["original_text"],
             summary_data["summary_text"],
@@ -63,9 +74,11 @@ def save_to_db(summary_data):
             summary_data["summary_words"],
             summary_data["compression_percentage"]
         ))
+        
         conn.commit()
+        cursor.close()
         conn.close()
-        print("✅ Summary saved to SQLite database")
+        print("✅ Summary saved to PostgreSQL database")
         return True
     except Exception as e:
         print(f"❌ Database save error: {e}")
@@ -77,18 +90,19 @@ def index():
 
 @app.route('/db-status')
 def db_status():
-    if db_available:
-        try:
-            conn = sqlite3.connect(DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("SELECT COUNT(*) FROM summaries")
-            count = cursor.fetchone()[0]
-            conn.close()
-            return f"Database connected and working properly. Total summaries: {count}"
-        except Exception as e:
-            return f"Database error: {str(e)}"
-    else:
+    if not db_available:
         return "Database not configured correctly"
+    
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM summaries")
+        count = cursor.fetchone()[0]
+        cursor.close()
+        conn.close()
+        return f"Database connected and working properly. Total summaries: {count}"
+    except Exception as e:
+        return f"Database error: {str(e)}"
 
 @app.route('/summarize', methods=["POST"])
 def summarize():
@@ -140,7 +154,7 @@ def summarize():
             "compression_percentage": compression_value
         }
         
-        # Save to SQLite database
+        # Save to database
         if db_available:
             save_to_db(summary_data)
         
@@ -164,9 +178,8 @@ def history():
         return jsonify({"error": "Database not available"}), 500
     
     try:
-        conn = sqlite3.connect(DB_PATH)
-        conn.row_factory = sqlite3.Row  # This enables column access by name
-        cursor = conn.cursor()
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
         
         # Get the most recent 10 summaries
         cursor.execute('''
@@ -177,27 +190,40 @@ def history():
         LIMIT 10
         ''')
         
-        rows = cursor.fetchall()
-        summaries = []
-        for row in rows:
-            summaries.append({
-                "id": row["id"],
-                "summary": row["summary_text"],
-                "length": row["length"],
-                "original_words": row["original_words"],
-                "summary_words": row["summary_words"],
-                "compression": f"{row['compression_percentage']:.1f}%",
-                "created_at": row["created_at"]
-            })
-        
+        summaries = cursor.fetchall()
+        cursor.close()
         conn.close()
+        
         return jsonify({"summaries": summaries})
     
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+@app.route('/view-summaries')
+def view_summaries():
+    if not db_available:
+        return "Database not available", 500
+    
+    try:
+        conn = psycopg2.connect(DATABASE_URL)
+        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        
+        cursor.execute('''
+        SELECT id, summary_text, original_text, length, 
+               original_words, summary_words, compression_percentage, created_at
+        FROM summaries
+        ORDER BY created_at DESC
+        ''')
+        
+        summaries = cursor.fetchall()
+        cursor.close()
+        conn.close()
+        
+        return render_template("summaries.html", summaries=summaries)
+    
+    except Exception as e:
+        return f"Error: {str(e)}", 500
+
 if __name__ == "__main__":
-    # Get port from environment variable (Render sets this)
     port = int(os.environ.get("PORT", 5000))
-    # Use 0.0.0.0 to bind to all addresses
     app.run(host="0.0.0.0", port=port)
