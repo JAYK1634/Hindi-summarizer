@@ -201,28 +201,33 @@ def history():
 
 @app.route('/view-summaries')
 def view_summaries():
-    if not db_available:
-        return "Database not available", 500
-    
     try:
+        # Connect to the database
         conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
+        cur = conn.cursor()
         
-        cursor.execute('''
-        SELECT id, summary_text, original_text, length, 
-               original_words, summary_words, compression_percentage, created_at
-        FROM summaries
-        ORDER BY created_at DESC
-        ''')
+        # Query all summaries, ordered by newest first
+        cur.execute("SELECT original_text, summary_text, timestamp FROM summaries ORDER BY timestamp DESC")
+        rows = cur.execute("SELECT original_text, summary_text, timestamp FROM summaries ORDER BY timestamp DESC").fetchall()
         
-        summaries = cursor.fetchall()
-        cursor.close()
+        # Format the data for the template
+        summaries = []
+        for row in rows:
+            summaries.append({
+                'original_text': row[0],
+                'summary_text': row[1],
+                'timestamp': row[2].strftime('%Y-%m-%d %H:%M:%S') if row[2] else 'Unknown'
+            })
+        
+        # Close the database connection
+        cur.close()
         conn.close()
         
-        return render_template("summaries.html", summaries=summaries)
-    
+        # Render the template with the summaries
+        return render_template('summaries.html', summaries=summaries)
     except Exception as e:
-        return f"Error: {str(e)}", 500
+        return f"Error: {str(e)}"
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
