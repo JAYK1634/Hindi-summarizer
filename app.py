@@ -3,6 +3,8 @@ import google.generativeai as genai
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from pymongo.mongo_client import MongoClient
+from pymongo.server_api import ServerApi
 
 # Load environment variables
 load_dotenv()
@@ -17,18 +19,20 @@ model = genai.GenerativeModel("gemini-2.0-flash")
 # MongoDB Connection (Optional)
 mongodb_available = False
 try:
-    from pymongo import MongoClient
-    # Use the provided MongoDB connection string with credentials
-    # Note the lowercase 'o' in clustero - MongoDB URLs are case-sensitive
-    MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://admin:dxs34Fu6WpQbgJsW@clustero.mongodb.net/hindi_summarizer?retryWrites=true&w=majority")
+    # Use the correct MongoDB connection string with your cluster ID
+    MONGO_URI = os.getenv("MONGO_URI", "mongodb+srv://admin:dxs34Fu6WpQbgJsW@cluster0.l9fiajl.mongodb.net/hindi_summarizer?retryWrites=true&w=majority&appName=Cluster0")
     
-    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)  # 5 second timeout
-    # Test the connection
-    client.server_info()
+    # Create a new client and connect to the server with API version
+    client = MongoClient(MONGO_URI, server_api=ServerApi('1'))
+    
+    # Test the connection with a ping
+    client.admin.command('ping')
+    print("✅ Pinged your deployment. You successfully connected to MongoDB!")
+    
     db = client["hindi_summarizer"]
     summaries_collection = db["summaries"]
     mongodb_available = True
-    print("✅ MongoDB connection successful!")
+    
 except Exception as e:
     print(f"❌ MongoDB connection failed: {e}")
     mongodb_available = False
@@ -42,7 +46,7 @@ def db_status():
     if mongodb_available:
         try:
             # Test the connection is still working
-            client.server_info()
+            client.admin.command('ping')
             return "Database connected and working properly"
         except Exception as e:
             return f"Database connection error: {str(e)}"
