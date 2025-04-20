@@ -275,30 +275,18 @@ def admin_database():
         """)
         columns = cursor.fetchall()
         
-        # Get sample data
-        cursor.execute("SELECT * FROM summaries ORDER BY created_at DESC LIMIT 5")
+        # Get sample data (limit to 3 to reduce memory usage)
+        cursor.execute("SELECT id, original_text, summary_text, length, original_words, summary_words, compression_percentage, created_at FROM summaries ORDER BY created_at DESC LIMIT 3")
         sample_data = cursor.fetchall()
         
         # Get count of records
         cursor.execute("SELECT COUNT(*) FROM summaries")
         count = cursor.fetchone()['count']
         
-        # Get some statistics
-        cursor.execute("""
-            SELECT 
-                MIN(created_at) as oldest_entry,
-                MAX(created_at) as newest_entry,
-                AVG(compression_percentage)::numeric(10,2) as avg_compression,
-                MIN(original_words) as min_words,
-                MAX(original_words) as max_words
-            FROM summaries
-        """)
-        stats = cursor.fetchone()
-        
         cursor.close()
         conn.close()
         
-        # Create HTML response
+        # Create HTML response with simpler formatting
         html = f"""
         <!DOCTYPE html>
         <html>
@@ -307,124 +295,77 @@ def admin_database():
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-                body {{ font-family: Arial, sans-serif; margin: 20px; line-height: 1.6; color: #333; }}
-                h1 {{ color: #2c3e50; text-align: center; margin-bottom: 30px; }}
-                h2 {{ color: #3498db; margin-top: 30px; border-bottom: 1px solid #eee; padding-bottom: 10px; }}
-                table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
-                th, td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                h1 {{ color: #2c3e50; text-align: center; }}
+                h2 {{ color: #3498db; margin-top: 20px; }}
+                table {{ border-collapse: collapse; width: 100%; margin: 10px 0; }}
+                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
                 th {{ background-color: #f2f2f2; }}
-                .stats {{ display: flex; flex-wrap: wrap; gap: 20px; margin: 20px 0; }}
-                .stat-box {{ background-color: #f8f9fa; border-radius: 5px; padding: 15px; flex: 1; min-width: 200px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
-                .stat-value {{ font-size: 24px; font-weight: bold; color: #3498db; margin: 10px 0; }}
-                .stat-label {{ font-size: 14px; color: #7f8c8d; }}
-                pre {{ background-color: #f8f9fa; padding: 15px; border-radius: 5px; overflow-x: auto; }}
-                .container {{ max-width: 1200px; margin: 0 auto; }}
-                .back-link {{ margin-top: 30px; display: block; text-align: center; }}
             </style>
         </head>
         <body>
-            <div class="container">
-                <h1>Hindi Summarizer Database Information</h1>
-                
-                <div class="stats">
-                    <div class="stat-box">
-                        <div class="stat-label">Total Summaries</div>
-                        <div class="stat-value">{count}</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-label">Average Compression</div>
-                        <div class="stat-value">{stats['avg_compression']}%</div>
-                    </div>
-                    <div class="stat-box">
-                        <div class="stat-label">Largest Text</div>
-                        <div class="stat-value">{stats['max_words']} words</div>
-                    </div>
-                </div>
-                
-                <h2>Database Tables</h2>
-                <ul>
-                    {"".join(f"<li>{table}</li>" for table in tables)}
-                </ul>
-                
-                <h2>Summaries Table Structure</h2>
-                <table>
-                    <tr>
-                        <th>Column Name</th>
-                        <th>Data Type</th>
-                    </tr>
-                    {"".join(f"<tr><td>{col['column_name']}</td><td>{col['data_type']}</td></tr>" for col in columns)}
-                </table>
-                
-                <h2>Database Statistics</h2>
-                <table>
-                    <tr>
-                        <th>Metric</th>
-                        <th>Value</th>
-                    </tr>
-                    <tr>
-                        <td>First Entry Date</td>
-                        <td>{stats['oldest_entry'].strftime('%Y-%m-%d %H:%M:%S') if stats['oldest_entry'] else 'N/A'}</td>
-                    </tr>
-                    <tr>
-                        <td>Latest Entry Date</td>
-                        <td>{stats['newest_entry'].strftime('%Y-%m-%d %H:%M:%S') if stats['newest_entry'] else 'N/A'}</td>
-                    </tr>
-                    <tr>
-                        <td>Average Compression</td>
-                        <td>{stats['avg_compression']}%</td>
-                    </tr>
-                    <tr>
-                        <td>Smallest Text</td>
-                        <td>{stats['min_words']} words</td>
-                    </tr>
-                    <tr>
-                        <td>Largest Text</td>
-                        <td>{stats['max_words']} words</td>
-                    </tr>
-                </table>
-                
-                <h2>Recent Entries (5 most recent)</h2>
-                <table>
-                    <tr>
-                        <th>ID</th>
-                        <th>Length</th>
-                        <th>Original Words</th>
-                        <th>Summary Words</th>
-                        <th>Compression</th>
-                        <th>Created At</th>
-                    </tr>
-                    {"".join(f"""
-                    <tr>
-                        <td>{entry['id']}</td>
-                        <td>{entry['length']}</td>
-                        <td>{entry['original_words']}</td>
-                        <td>{entry['summary_words']}</td>
-                        <td>{entry['compression_percentage']:.1f}%</td>
-                        <td>{entry['created_at'].strftime('%Y-%m-%d %H:%M:%S') if entry['created_at'] else 'N/A'}</td>
-                    </tr>
-                    """ for entry in sample_data)}
-                </table>
-                
-                <h2>Sample Text and Summaries</h2>
+            <h1>Hindi Summarizer Database Information</h1>
+            
+            <h2>Database Overview</h2>
+            <p>Total Summaries: {count}</p>
+            
+            <h2>Database Tables</h2>
+            <ul>
+                {"".join(f"<li>{table}</li>" for table in tables)}
+            </ul>
+            
+            <h2>Summaries Table Structure</h2>
+            <table>
+                <tr>
+                    <th>Column Name</th>
+                    <th>Data Type</th>
+                </tr>
+                {"".join(f"<tr><td>{col['column_name']}</td><td>{col['data_type']}</td></tr>" for col in columns)}
+            </table>
+            
+            <h2>Recent Entries (3 most recent)</h2>
+            <table>
+                <tr>
+                    <th>ID</th>
+                    <th>Length</th>
+                    <th>Original Words</th>
+                    <th>Summary Words</th>
+                    <th>Compression</th>
+                    <th>Created At</th>
+                </tr>
                 {"".join(f"""
-                <div style="margin-bottom: 30px; border: 1px solid #eee; padding: 15px; border-radius: 5px;">
-                    <h3>Summary #{entry['id']}</h3>
-                    <h4>Original Text:</h4>
-                    <pre>{entry['original_text'][:300]}{'...' if len(entry['original_text']) > 300 else ''}</pre>
-                    <h4>Summary:</h4>
-                    <pre>{entry['summary_text']}</pre>
-                </div>
+                <tr>
+                    <td>{entry['id']}</td>
+                    <td>{entry['length']}</td>
+                    <td>{entry['original_words']}</td>
+                    <td>{entry['summary_words']}</td>
+                    <td>{entry['compression_percentage']:.1f}%</td>
+                    <td>{entry['created_at'].strftime('%Y-%m-%d %H:%M:%S') if entry['created_at'] else 'N/A'}</td>
+                </tr>
                 """ for entry in sample_data)}
-                
-                <a href="/" class="back-link">Back to Summarizer</a>
+            </table>
+            
+            <h2>Sample Text and Summaries</h2>
+            {"".join(f"""
+            <div style="margin-bottom: 20px; border: 1px solid #eee; padding: 10px;">
+                <h3>Summary #{entry['id']}</h3>
+                <h4>Original Text (first 200 chars):</h4>
+                <div>{entry['original_text'][:200]}{'...' if len(entry['original_text']) > 200 else ''}</div>
+                <h4>Summary:</h4>
+                <div>{entry['summary_text']}</div>
             </div>
+            """ for entry in sample_data)}
+            
+            <a href="/" style="display: block; margin-top: 20px; text-align: center;">Back to Summarizer</a>
         </body>
         </html>
         """
         
         return html
     except Exception as e:
-        return f"Error accessing database: {str(e)}"
+        import traceback
+        error_details = traceback.format_exc()
+        return f"<h1>Error accessing database</h1><pre>{str(e)}</pre><h2>Details:</h2><pre>{error_details}</pre>"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
