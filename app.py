@@ -253,41 +253,11 @@ def db_schema():
     except Exception as e:
         return jsonify({"error": str(e)})
 
-@app.route('/admin/database', methods=['GET'])
+@app.route('/admin/database')
 def admin_database():
     try:
-        conn = psycopg2.connect(DATABASE_URL)
-        cursor = conn.cursor(cursor_factory=RealDictCursor)
-        
-        # Get table information
-        cursor.execute("""
-            SELECT table_name 
-            FROM information_schema.tables 
-            WHERE table_schema = 'public'
-        """)
-        tables = [table['table_name'] for table in cursor.fetchall()]
-        
-        # Get column information for summaries table
-        cursor.execute("""
-            SELECT column_name, data_type
-            FROM information_schema.columns
-            WHERE table_name = 'summaries'
-        """)
-        columns = cursor.fetchall()
-        
-        # Get sample data (limit to 3 to reduce memory usage)
-        cursor.execute("SELECT id, original_text, summary_text, length, original_words, summary_words, compression_percentage, created_at FROM summaries ORDER BY created_at DESC LIMIT 3")
-        sample_data = cursor.fetchall()
-        
-        # Get count of records
-        cursor.execute("SELECT COUNT(*) FROM summaries")
-        count = cursor.fetchone()['count']
-        
-        cursor.close()
-        conn.close()
-        
-        # Create HTML response with simpler formatting
-        html = f"""
+        # Basic HTML response without database queries
+        html = """
         <!DOCTYPE html>
         <html>
         <head>
@@ -295,77 +265,70 @@ def admin_database():
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <style>
-                body {{ font-family: Arial, sans-serif; margin: 20px; }}
-                h1 {{ color: #2c3e50; text-align: center; }}
-                h2 {{ color: #3498db; margin-top: 20px; }}
-                table {{ border-collapse: collapse; width: 100%; margin: 10px 0; }}
-                th, td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-                th {{ background-color: #f2f2f2; }}
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                h1 { color: #2c3e50; text-align: center; }
+                .container { max-width: 800px; margin: 0 auto; }
+                .card { border: 1px solid #ddd; padding: 15px; margin: 15px 0; border-radius: 5px; }
+                .btn { display: inline-block; padding: 10px 15px; background: #3498db; color: white; 
+                       text-decoration: none; border-radius: 5px; margin: 10px 0; }
+                .center { text-align: center; }
             </style>
         </head>
         <body>
-            <h1>Hindi Summarizer Database Information</h1>
-            
-            <h2>Database Overview</h2>
-            <p>Total Summaries: {count}</p>
-            
-            <h2>Database Tables</h2>
-            <ul>
-                {"".join(f"<li>{table}</li>" for table in tables)}
-            </ul>
-            
-            <h2>Summaries Table Structure</h2>
-            <table>
-                <tr>
-                    <th>Column Name</th>
-                    <th>Data Type</th>
-                </tr>
-                {"".join(f"<tr><td>{col['column_name']}</td><td>{col['data_type']}</td></tr>" for col in columns)}
-            </table>
-            
-            <h2>Recent Entries (3 most recent)</h2>
-            <table>
-                <tr>
-                    <th>ID</th>
-                    <th>Length</th>
-                    <th>Original Words</th>
-                    <th>Summary Words</th>
-                    <th>Compression</th>
-                    <th>Created At</th>
-                </tr>
-                {"".join(f"""
-                <tr>
-                    <td>{entry['id']}</td>
-                    <td>{entry['length']}</td>
-                    <td>{entry['original_words']}</td>
-                    <td>{entry['summary_words']}</td>
-                    <td>{entry['compression_percentage']:.1f}%</td>
-                    <td>{entry['created_at'].strftime('%Y-%m-%d %H:%M:%S') if entry['created_at'] else 'N/A'}</td>
-                </tr>
-                """ for entry in sample_data)}
-            </table>
-            
-            <h2>Sample Text and Summaries</h2>
-            {"".join(f"""
-            <div style="margin-bottom: 20px; border: 1px solid #eee; padding: 10px;">
-                <h3>Summary #{entry['id']}</h3>
-                <h4>Original Text (first 200 chars):</h4>
-                <div>{entry['original_text'][:200]}{'...' if len(entry['original_text']) > 200 else ''}</div>
-                <h4>Summary:</h4>
-                <div>{entry['summary_text']}</div>
+            <div class="container">
+                <h1>Hindi Summarizer Database Information</h1>
+                
+                <div class="card">
+                    <h2>Database Structure</h2>
+                    <p>Our application uses PostgreSQL to store summary data with the following structure:</p>
+                    <ul>
+                        <li><strong>id</strong>: Serial primary key</li>
+                        <li><strong>original_text</strong>: The input Hindi text</li>
+                        <li><strong>summary_text</strong>: The generated summary</li>
+                        <li><strong>length</strong>: Selected summary length (short/long)</li>
+                        <li><strong>original_sentences</strong>: Number of sentences in original text</li>
+                        <li><strong>original_words</strong>: Number of words in original text</li>
+                        <li><strong>summary_words</strong>: Number of words in summary</li>
+                        <li><strong>compression_percentage</strong>: Percentage of text reduction</li>
+                        <li><strong>created_at</strong>: Timestamp when summary was created</li>
+                    </ul>
+                </div>
+                
+                <div class="card">
+                    <h2>Database Usage</h2>
+                    <p>The database stores all summaries generated by users, allowing us to:</p>
+                    <ul>
+                        <li>Track usage patterns over time</li>
+                        <li>Analyze compression ratios for different text lengths</li>
+                        <li>Provide history functionality for users</li>
+                        <li>Improve our summarization algorithm based on data</li>
+                    </ul>
+                </div>
+                
+                <div class="card">
+                    <h2>Database Operations</h2>
+                    <p>The application performs these database operations:</p>
+                    <ul>
+                        <li><strong>CREATE</strong>: When users generate new summaries</li>
+                        <li><strong>READ</strong>: When viewing summary history</li>
+                        <li><strong>QUERY</strong>: To generate statistics and analytics</li>
+                    </ul>
+                </div>
+                
+                <div class="center">
+                    <a href="/view-summaries" class="btn">View All Summaries</a>
+                    <a href="/" class="btn">Back to Summarizer</a>
+                </div>
             </div>
-            """ for entry in sample_data)}
-            
-            <a href="/" style="display: block; margin-top: 20px; text-align: center;">Back to Summarizer</a>
         </body>
         </html>
         """
-        
         return html
     except Exception as e:
-        import traceback
-        error_details = traceback.format_exc()
-        return f"<h1>Error accessing database</h1><pre>{str(e)}</pre><h2>Details:</h2><pre>{error_details}</pre>"
+        return f"<h1>Error</h1><p>{str(e)}</p>"
+
+# This is needed for Gunicorn to find your app
+application = app
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
